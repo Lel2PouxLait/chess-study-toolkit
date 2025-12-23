@@ -1,0 +1,16 @@
+Stockfish Chess Engine
+======================
+
+This project includes Stockfish chess engine binaries located in backend/stockfish/
+
+Stockfish is free software licensed under the GNU General Public License v3.
+
+Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file in Stockfish repository)
+
+Official Stockfish repository: https://github.com/official-stockfish/Stockfish
+Official website: https://stockfishchess.org/
+
+Stockfish is distributed under the GNU General Public License version 3 (GPL v3).
+You may obtain a copy of the GPL v3 license at: https://www.gnu.org/licenses/gpl-3.0.txt
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
