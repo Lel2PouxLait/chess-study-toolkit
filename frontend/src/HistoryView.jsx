@@ -174,7 +174,7 @@ function HistoryView() {
 
   return (
     <div style={styles.container}>
-      <h2>Game data base</h2>
+      <h2>Database game list</h2>
 
       <div style={styles.filters}>
         <div style={styles.filterGroup}>

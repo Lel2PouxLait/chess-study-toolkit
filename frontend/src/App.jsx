@@ -67,8 +67,8 @@ function App() {
   return (
     <div style={styles.container}>
       <header style={styles.header}>
-        <h1 style={styles.title}>Chess Training</h1>
-        <p style={styles.subtitle}>Free game analysis and opening exploration</p>
+        <h1 style={styles.title}>Chess study toolkit</h1>
+        <p style={styles.subtitle}>A free game aggregator, chess database manager, game reviewer and opening explorator</p>
       </header>
 
       <nav style={styles.nav}>

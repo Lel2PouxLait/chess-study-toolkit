@@ -123,7 +123,7 @@ function ExplorerView() {
     <div style={styles.container}>
       <h2>Opening Explorer</h2>
       <p style={styles.description}>
-        Play moves on the board to explore openings played in the database and see Stockfish analysis
+        Play moves on the board to explore openings played in the selected database and see Stockfish analysis
       </p>
 
       <div style={styles.content}>
