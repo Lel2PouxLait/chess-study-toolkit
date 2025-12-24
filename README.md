@@ -153,3 +153,7 @@ This project bundles [Stockfish](https://stockfishchess.org/), a free and open-s
 
 - Stockfish repository: https://github.com/official-stockfish/Stockfish
 - Stockfish is Copyright (C) 2004-2024 The Stockfish developers
+
+### Data Sources
+
+Opening names and ECO codes are sourced from the [Lichess Opening Database](https://github.com/lichess-org/chess-openings), released under CC0-1.0 (public domain dedication).
