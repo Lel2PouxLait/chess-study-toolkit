@@ -96,7 +96,7 @@ class ExplorerQueryRequest(BaseModel):
     color: str  # "white" or "black"
     from_date: Optional[str] = None
     to_date: Optional[str] = None
-    time_control: Optional[str] = None  # Time control filter (e.g., "bullet", "blitz")
+    time_control: Optional[List[str]] = None  # Time control filters (e.g., ["bullet", "blitz"])
     usernames: Optional[List[str]] = None  # List of usernames to identify which color user played
 
 
@@ -565,7 +565,7 @@ def find_continuations(
     color: str,
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
-    time_control: Optional[str] = None,
+    time_control: Optional[List[str]] = None,
     usernames: Optional[List[str]] = None
 ) -> List[Dict]:
     """
@@ -601,10 +601,12 @@ def find_continuations(
         all_games = filtered_games
 
     # Filter by time control (classify based on time in seconds)
-    if time_control:
+    if time_control and len(time_control) > 0:
+        # Normalize time controls to lowercase
+        time_controls_lower = [tc.lower() for tc in time_control]
         filtered_games = []
         for g in all_games:
-            if classify_time_control(g.time_control) == time_control.lower():
+            if classify_time_control(g.time_control) in time_controls_lower:
                 filtered_games.append(g)
         all_games = filtered_games
 

@@ -17,7 +17,7 @@ function ExplorerView() {
   const [moveHistory, setMoveHistory] = useState([])
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
-  const [timeControl, setTimeControl] = useState('all')
+  const [selectedTimeControls, setSelectedTimeControls] = useState([])
   const [chesscomUsername, setChesscomUsername] = useState('')
   const [lichessUsername, setLichessUsername] = useState('')
 
@@ -51,7 +51,7 @@ function ExplorerView() {
     } else if (!currentDbId) {
       setExplorerData(null)
     }
-  }, [position, color, fromDate, toDate, timeControl, chesscomUsername, lichessUsername, currentDbId])
+  }, [position, color, fromDate, toDate, selectedTimeControls, chesscomUsername, lichessUsername, currentDbId])
 
   const queryExplorer = async () => {
     if (!currentDbId) {
@@ -75,7 +75,7 @@ function ExplorerView() {
         color: color,
         from_date: new Date(fromDate).toISOString(),
         to_date: toDateTime.toISOString(),
-        time_control: timeControl !== 'all' ? timeControl : null,
+        time_control: selectedTimeControls.length > 0 ? selectedTimeControls : null,
         usernames: usernames.length > 0 ? usernames : null
       })
       setExplorerData(response.data)
@@ -214,19 +214,26 @@ function ExplorerView() {
               </div>
             </div>
             <div style={styles.filterGroup}>
-              <label style={styles.label}>Time Control:</label>
-              <select
-                value={timeControl}
-                onChange={(e) => setTimeControl(e.target.value)}
-                style={styles.select}
-              >
-                <option value="all">All time controls</option>
-                <option value="bullet">Bullet</option>
-                <option value="blitz">Blitz</option>
-                <option value="rapid">Rapid</option>
-                <option value="classical">Classical</option>
-                <option value="correspondence">Correspondence</option>
-              </select>
+              <label style={styles.label}>Time Controls:</label>
+              <div style={styles.checkboxGroup}>
+                {['bullet', 'blitz', 'rapid', 'classical', 'correspondence'].map(tc => (
+                  <label key={tc} style={styles.checkboxLabel}>
+                    <input
+                      type="checkbox"
+                      checked={selectedTimeControls.includes(tc)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedTimeControls([...selectedTimeControls, tc])
+                        } else {
+                          setSelectedTimeControls(selectedTimeControls.filter(t => t !== tc))
+                        }
+                      }}
+                      style={styles.checkbox}
+                    />
+                    <span style={styles.checkboxText}>{tc.charAt(0).toUpperCase() + tc.slice(1)}</span>
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -442,6 +449,27 @@ const styles = {
     padding: '8px 12px',
     borderRadius: '4px',
     border: '1px solid #ddd'
+  },
+  checkboxGroup: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '10px',
+    padding: '8px 0'
+  },
+  checkboxLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '5px',
+    cursor: 'pointer',
+    fontSize: '14px'
+  },
+  checkbox: {
+    cursor: 'pointer',
+    width: '16px',
+    height: '16px'
+  },
+  checkboxText: {
+    userSelect: 'none'
   },
   boardWithEval: {
     display: 'flex',
