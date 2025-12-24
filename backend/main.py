@@ -40,7 +40,7 @@ def detect_opening(moves: List[str]) -> Dict[str, str]:
     Detect opening name and ECO code from a list of moves.
 
     Args:
-        moves: List of moves in UCI format (e.g., ['e2e4', 'e7e5', 'g1f3'])
+        moves: List of moves in SAN format (e.g., ['e4', 'e5', 'Nf3']) or UCI format
 
     Returns:
         Dict with 'name' and 'eco' keys, or {'name': 'Unknown Opening', 'eco': ''}
@@ -48,10 +48,33 @@ def detect_opening(moves: List[str]) -> Dict[str, str]:
     if not moves or not OPENINGS_DB:
         return {'name': 'Unknown Opening', 'eco': ''}
 
+    # Convert SAN moves to UCI format for matching against the opening tree
+    uci_moves = []
+    try:
+        board = chess.Board()
+        for san_move in moves:
+            # Try to parse as SAN first
+            try:
+                move = board.parse_san(san_move)
+                uci_moves.append(move.uci())
+                board.push(move)
+            except:
+                # If SAN parsing fails, assume it's already UCI
+                uci_moves.append(san_move)
+                try:
+                    board.push_uci(san_move)
+                except:
+                    # Invalid move, stop here
+                    break
+    except Exception as e:
+        logger.logger.warning(f"Error converting moves for opening detection: {e}")
+        return {'name': 'Unknown Opening', 'eco': ''}
+
+    # Now match against opening tree using UCI moves
     current = OPENINGS_DB
     last_known = {'name': 'Unknown Opening', 'eco': ''}
 
-    for move in moves:
+    for move in uci_moves:
         if move in current:
             node = current[move]
             # Update last known opening

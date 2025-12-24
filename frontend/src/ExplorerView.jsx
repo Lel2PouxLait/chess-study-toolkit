@@ -20,8 +20,8 @@ function ExplorerView() {
   const [selectedTimeControls, setSelectedTimeControls] = useState([])
   const [chesscomUsername, setChesscomUsername] = useState('')
   const [lichessUsername, setLichessUsername] = useState('')
-  const [fenInput, setFenInput] = useState('')
-  const [fenError, setFenError] = useState('')
+  const [movesInput, setMovesInput] = useState('')
+  const [movesError, setMovesError] = useState('')
 
   // Add CSS keyframes for spinner animation
   useEffect(() => {
@@ -130,35 +130,46 @@ function ExplorerView() {
     setMoveHistory(moveHistory.slice(0, -1))
   }
 
-  const loadPositionFromFen = () => {
+  const loadPositionFromMoves = () => {
     try {
-      setFenError('')
-      const newGame = new Chess(fenInput.trim())
+      setMovesError('')
+      const newGame = new Chess()
+
+      // Split moves by spaces and filter out empty strings
+      const movesList = movesInput.trim().split(/\s+/).filter(m => m)
+      const sanMoves = []
+
+      for (const move of movesList) {
+        try {
+          const playedMove = newGame.move(move)
+          if (!playedMove) {
+            setMovesError(`Invalid move: ${move}. Please check your notation.`)
+            return
+          }
+          sanMoves.push(playedMove.san)
+        } catch (error) {
+          setMovesError(`Invalid move: ${move}. Use algebraic notation (e.g., e4, Nf3, O-O)`)
+          return
+        }
+      }
+
       setGame(newGame)
       setPosition(newGame.fen())
-
-      // Rebuild move history from the position
-      const moves = []
-      const tempGame = new Chess()
-      for (const move of newGame.history()) {
-        moves.push(move)
-        tempGame.move(move)
-      }
-      setMoveHistory(moves)
-      setFenInput('')
+      setMoveHistory(sanMoves)
+      setMovesInput('')
     } catch (error) {
-      setFenError('Invalid FEN notation. Please check your input.')
+      setMovesError('Error loading position. Please check your moves.')
     }
   }
 
-  const copyCurrentFen = () => {
-    navigator.clipboard.writeText(game.fen())
+  const copyCurrentMoves = () => {
+    const movesString = moveHistory.join(' ')
+    navigator.clipboard.writeText(movesString)
       .then(() => {
-        // Show success feedback (could add a toast notification here)
-        alert('FEN copied to clipboard!')
+        alert('Moves copied to clipboard!')
       })
       .catch(() => {
-        setFenError('Failed to copy FEN to clipboard')
+        setMovesError('Failed to copy moves to clipboard')
       })
   }
 
@@ -198,24 +209,24 @@ function ExplorerView() {
           </div>
 
           <div style={styles.fenSearch}>
-            <label style={styles.label}>Position Search (FEN):</label>
+            <label style={styles.label}>Position Search (Moves):</label>
             <div style={styles.fenInputContainer}>
               <input
                 type="text"
-                value={fenInput}
-                onChange={(e) => setFenInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && loadPositionFromFen()}
-                placeholder="Paste FEN notation to jump to position..."
+                value={movesInput}
+                onChange={(e) => setMovesInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && loadPositionFromMoves()}
+                placeholder="Enter moves (e.g., e4 c6 d4 d5) to jump to position..."
                 style={styles.fenInput}
               />
-              <button onClick={loadPositionFromFen} style={styles.fenButton}>
+              <button onClick={loadPositionFromMoves} style={styles.fenButton}>
                 Load Position
               </button>
-              <button onClick={copyCurrentFen} style={styles.copyFenButton} title="Copy current FEN">
-                📋 Copy FEN
+              <button onClick={copyCurrentMoves} style={styles.copyFenButton} title="Copy current moves">
+                📋 Copy Moves
               </button>
             </div>
-            {fenError && <div style={styles.fenError}>{fenError}</div>}
+            {movesError && <div style={styles.fenError}>{movesError}</div>}
           </div>
 
           <div style={styles.dateFilters}>
