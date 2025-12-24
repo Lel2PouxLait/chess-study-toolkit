@@ -75,6 +75,7 @@ function ExplorerView() {
       const response = await axios.post(`${API_BASE}/explorer/query?db_id=${currentDbId}`, {
         fen: game.fen(),
         color: color,
+        moves: moveHistory.length > 0 ? moveHistory : null,
         from_date: new Date(fromDate).toISOString(),
         to_date: toDateTime.toISOString(),
         time_control: selectedTimeControls.length > 0 ? selectedTimeControls : null,

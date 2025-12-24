@@ -159,6 +159,7 @@ class AnalyzePositionRequest(BaseModel):
 class ExplorerQueryRequest(BaseModel):
     fen: str
     color: str  # "white" or "black"
+    moves: Optional[List[str]] = None  # Move history in SAN format (e.g., ["e4", "e5", "Nf3"])
     from_date: Optional[str] = None
     to_date: Optional[str] = None
     time_control: Optional[List[str]] = None  # Time control filters (e.g., ["bullet", "blitz"])
@@ -573,9 +574,12 @@ async def explorer_query(request: ExplorerQueryRequest, db_id: str):
                 pass
 
         # Detect opening from the move history
-        move_history = [move.uci() for move in board.move_stack]
-
-        opening_info = detect_opening(move_history)
+        # Use moves from request if provided, otherwise try to get from board.move_stack
+        if request.moves:
+            opening_info = detect_opening(request.moves)
+        else:
+            move_history = [move.uci() for move in board.move_stack]
+            opening_info = detect_opening(move_history)
 
         return {
             "fen": request.fen,
