@@ -128,6 +128,7 @@ async def startup_migration():
 
 # Background task tracking
 import_tasks: Dict[str, Dict] = {}
+puzzle_tasks: Dict[str, Dict] = {}
 
 
 # Pydantic models for request/response
@@ -172,6 +173,63 @@ class CreateDatabaseRequest(BaseModel):
 
 class RenameDatabaseRequest(BaseModel):
     name: str
+
+
+class PuzzleCandidate(BaseModel):
+    """Represents a potential puzzle position"""
+    puzzle_id: str  # UUID
+    game_id: str
+    fen: str
+    move_number: int  # Which move number (1-based)
+    ply: int  # Which ply (0-based, move_number*2 - (1 or 2))
+    best_move: str  # Stockfish's best move in UCI format
+    best_move_san: str  # Stockfish's best move in SAN format
+    principal_variation: List[str]  # Full solution sequence in UCI format (first 5 moves)
+    played_move: Optional[str] = None  # What was actually played (if Type A puzzle)
+    played_move_san: Optional[str] = None
+    position_eval_cp: int  # Position eval before the move (centipawns)
+    best_move_eval_cp: int  # Eval after best move (centipawns)
+    played_move_eval_cp: Optional[int] = None  # Eval after played move (if Type A)
+    eval_loss_cp: int  # Centipawn loss (0 for Type B puzzles, actual loss for Type A)
+    difficulty: str  # "easy", "medium", "hard"
+    puzzle_type: str  # "mistake" or "tactical"
+    opening_name: str
+    opening_eco: str
+    player_color: str  # "white" or "black"
+    opponent: str
+    date: str
+    platform: str
+    pgn: str  # Full PGN of the game
+
+
+class GeneratePuzzlesRequest(BaseModel):
+    username: str
+    max_puzzles: Optional[int] = 50  # Limit number of puzzles generated
+    difficulty: Optional[List[str]] = None  # Filter: ["easy", "medium", "hard"]
+    min_ply: Optional[int] = 0  # Only puzzles from ply >= min_ply (default 0 = start of game)
+    max_ply: Optional[int] = 20  # Only puzzles from ply <= max_ply (default 20 = 10 moves)
+
+
+class PuzzleResponse(BaseModel):
+    puzzles: List[PuzzleCandidate]
+    total_games_analyzed: int
+    puzzles_found: int
+
+
+class PuzzleGenerationResponse(BaseModel):
+    task_id: str
+    message: str
+
+
+class PuzzleGenerationStatus(BaseModel):
+    task_id: str
+    status: str  # "running", "completed", "failed"
+    progress: int  # 0-100
+    current_game: int
+    total_games: int
+    puzzles_found: int
+    error: Optional[str] = None
+    puzzles: Optional[List[PuzzleCandidate]] = None  # Only when completed
 
 
 @app.get("/")
@@ -596,6 +654,81 @@ async def explorer_query(request: ExplorerQueryRequest, db_id: str):
         raise HTTPException(status_code=500, detail=f"Explorer query failed: {str(e)}")
 
 
+@app.post("/api/puzzles/generate", response_model=PuzzleGenerationResponse)
+async def generate_puzzles_endpoint(request: GeneratePuzzlesRequest, background_tasks: BackgroundTasks, db_id: str):
+    """
+    Start puzzle generation as a background task.
+
+    This endpoint starts a background task that scans games where the user played
+    and identifies positions where they made mistakes or where tactical opportunities existed.
+
+    Args:
+        request: GeneratePuzzlesRequest with username and filters
+        background_tasks: FastAPI BackgroundTasks
+        db_id: Database ID to search in
+
+    Returns:
+        PuzzleGenerationResponse with task_id for tracking progress
+    """
+    # Validate database exists
+    if db_id not in db_manager.metadata:
+        raise HTTPException(status_code=400, detail=f"Database {db_id} not found")
+
+    # Generate unique task ID
+    task_id = str(uuid.uuid4())
+
+    # Initialize task status
+    puzzle_tasks[task_id] = {
+        "task_id": task_id,
+        "status": "running",
+        "progress": 0,
+        "current_game": 0,
+        "total_games": 0,
+        "puzzles_found": 0,
+        "error": None,
+        "puzzles": None
+    }
+
+    # Start background task
+    background_tasks.add_task(
+        run_puzzle_generation_task,
+        task_id=task_id,
+        db_id=db_id,
+        username=request.username,
+        max_puzzles=request.max_puzzles or 50,
+        difficulty_filter=request.difficulty,
+        min_ply=request.min_ply or 0,
+        max_ply=request.max_ply or 20
+    )
+
+    logger.logger.info(f"Started puzzle generation task {task_id} for user '{request.username}' in database {db_id}")
+
+    return PuzzleGenerationResponse(
+        task_id=task_id,
+        message="Puzzle generation started"
+    )
+
+
+@app.get("/api/puzzles/status/{task_id}", response_model=PuzzleGenerationStatus)
+async def get_puzzle_generation_status(task_id: str):
+    """Get the status of a puzzle generation task."""
+    if task_id not in puzzle_tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    task = puzzle_tasks[task_id]
+
+    return PuzzleGenerationStatus(
+        task_id=task["task_id"],
+        status=task["status"],
+        progress=task["progress"],
+        current_game=task["current_game"],
+        total_games=task["total_games"],
+        puzzles_found=task["puzzles_found"],
+        error=task.get("error"),
+        puzzles=task.get("puzzles")
+    )
+
+
 def classify_time_control(time_control_str: str) -> str:
     """
     Classify a time control string into bullet/blitz/rapid/classical/correspondence.
@@ -772,6 +905,302 @@ def find_continuations(
     result.sort(key=lambda x: x["count"], reverse=True)
 
     return result
+
+
+def generate_puzzles_from_games(
+    storage,
+    username: str,
+    max_puzzles: int = 50,
+    difficulty_filter: Optional[List[str]] = None,
+    min_ply: int = 0,
+    max_ply: int = 20,
+    progress_callback = None
+) -> List[PuzzleCandidate]:
+    """
+    Scan games and identify puzzle candidates.
+
+    Algorithm:
+    1. Filter games where username played
+    2. For each game, replay moves between min_ply and max_ply
+    3. At each position:
+       - Analyze with Stockfish to get best move and eval
+       - Compare with played move
+       - If eval loss > 100cp OR position has tactical opportunity, create puzzle
+    4. Classify difficulty and randomize order before returning
+
+    Args:
+        storage: GameStorage instance
+        username: Username to find puzzles for
+        max_puzzles: Maximum number of puzzles to generate
+        difficulty_filter: List of difficulties to include (["easy", "medium", "hard"])
+        min_ply: Only analyze positions from ply >= min_ply (default 0)
+        max_ply: Only analyze positions up to ply <= max_ply (default 20)
+
+    Returns:
+        List of PuzzleCandidate objects (randomized order)
+    """
+    import random
+
+    puzzles = []
+    all_games = storage.get_all_games()
+    games_analyzed = 0
+
+    # Randomize game order to get variety across different games
+    random.shuffle(all_games)
+
+    # Normalize username for case-insensitive matching
+    username_lower = username.lower()
+
+    # Filter games where user played
+    user_games = [
+        g for g in all_games
+        if g.white_player.lower() == username_lower or g.black_player.lower() == username_lower
+    ]
+    total_user_games = len(user_games)
+
+    # Limit puzzles per game for better variety
+    MAX_PUZZLES_PER_GAME = 2
+
+    logger.logger.info(f"Generating puzzles for {username} from {total_user_games} games")
+
+    for game_idx, game in enumerate(user_games):
+        # Determine player color and opponent
+        if game.white_player.lower() == username_lower:
+            player_color = "white"
+            opponent = game.black_player
+        else:
+            player_color = "black"
+            opponent = game.white_player
+
+        games_analyzed += 1
+
+        # Report progress
+        if progress_callback and total_user_games > 0:
+            progress_pct = int((game_idx / total_user_games) * 100)
+            progress_callback(progress_pct, game_idx, total_user_games, len(puzzles))
+
+        # Parse PGN and replay game
+        try:
+            pgn_io = io.StringIO(game.pgn)
+            chess_game = chess.pgn.read_game(pgn_io)
+            if not chess_game:
+                continue
+
+            board = chess_game.board()
+
+            # Get opening info from the game's moves
+            opening_info = detect_opening(game.moves)
+
+            # Collect all moves and identify which ones are user's turn within ply range
+            all_moves = list(chess_game.mainline_moves())
+            user_positions = []  # List of (ply, move) tuples where it's user's turn
+
+            temp_board = chess_game.board()
+            for ply, move in enumerate(all_moves):
+                # Check if within ply range
+                if min_ply <= ply < max_ply:
+                    # Check if it's user's turn
+                    is_user_turn = (temp_board.turn == chess.WHITE and player_color == "white") or \
+                                  (temp_board.turn == chess.BLACK and player_color == "black")
+                    if is_user_turn:
+                        user_positions.append((ply, move))
+                temp_board.push(move)
+
+            # Randomly sample positions to analyze (max 5 per game to avoid analyzing every position)
+            if len(user_positions) > 5:
+                sampled_positions = random.sample(user_positions, 5)
+            else:
+                sampled_positions = user_positions
+
+            # Track puzzles found in this game
+            puzzles_this_game = 0
+
+            # Analyze sampled positions
+            for ply, move in sampled_positions:
+                # Stop if we've found enough puzzles in this game
+                if puzzles_this_game >= MAX_PUZZLES_PER_GAME:
+                    break
+
+                # Replay game up to this position
+                board = chess_game.board()
+                for i, m in enumerate(all_moves):
+                    if i >= ply:
+                        break
+                    board.push(m)
+
+                # Analyze position BEFORE the move
+                fen = board.fen()
+                position_analysis = stockfish.analyze_position(fen, depth=18)
+
+                if not position_analysis or position_analysis['best_move'] == 'none':
+                    continue
+
+                best_move_uci = position_analysis['best_move']
+                position_eval_cp = position_analysis['score_cp']
+
+                # Analyze position AFTER best move
+                temp_board = board.copy()
+                try:
+                    best_move_obj = chess.Move.from_uci(best_move_uci)
+                    temp_board.push(best_move_obj)
+                    best_move_analysis = stockfish.analyze_position(temp_board.fen(), depth=15)
+                    best_move_eval_cp = -best_move_analysis['score_cp']  # Flip perspective
+                except:
+                    continue
+
+                # Analyze position AFTER played move
+                played_move_uci = move.uci()
+                temp_board2 = board.copy()
+                temp_board2.push(move)
+                played_move_analysis = stockfish.analyze_position(temp_board2.fen(), depth=15)
+                played_move_eval_cp = -played_move_analysis['score_cp']  # Flip perspective
+
+                # Calculate eval loss (from player's perspective)
+                eval_loss = position_eval_cp - played_move_eval_cp
+
+                # Determine if this is a puzzle candidate
+                puzzle_type = None
+
+                # Type A: Mistake (played move significantly worse than best move)
+                if played_move_uci != best_move_uci and eval_loss >= 100:
+                    puzzle_type = "mistake"
+
+                # Type B: Tactical opportunity (best move gives significant advantage)
+                # Only if the best move improves position by at least 100cp
+                elif (position_eval_cp - best_move_eval_cp) >= 100:
+                    puzzle_type = "tactical"
+                    eval_loss = 0  # No loss, it's a tactical opportunity
+
+                if puzzle_type:
+                    # Classify difficulty
+                    if eval_loss < 100:
+                        difficulty = "easy"  # Tactical opportunities
+                    elif eval_loss < 300:
+                        difficulty = "easy"
+                    elif eval_loss < 600:
+                        difficulty = "medium"
+                    else:
+                        difficulty = "hard"
+
+                    # Apply difficulty filter
+                    if difficulty_filter and difficulty not in difficulty_filter:
+                        continue
+
+                    # Convert UCI to SAN
+                    try:
+                        best_move_san = board.san(best_move_obj)
+                        played_move_san = board.san(move) if puzzle_type == "mistake" else None
+                    except:
+                        continue
+
+                    # Create puzzle
+                    puzzle = PuzzleCandidate(
+                        puzzle_id=str(uuid.uuid4()),
+                        game_id=game.game_id,
+                        fen=fen,
+                        move_number=(ply // 2) + 1,
+                        ply=ply,
+                        best_move=best_move_uci,
+                        best_move_san=best_move_san,
+                        principal_variation=position_analysis.get('principal_variation', [best_move_uci]),
+                        played_move=played_move_uci if puzzle_type == "mistake" else None,
+                        played_move_san=played_move_san,
+                        position_eval_cp=position_eval_cp,
+                        best_move_eval_cp=best_move_eval_cp,
+                        played_move_eval_cp=played_move_eval_cp if puzzle_type == "mistake" else None,
+                        eval_loss_cp=eval_loss,
+                        difficulty=difficulty,
+                        puzzle_type=puzzle_type,
+                        opening_name=opening_info['name'],
+                        opening_eco=opening_info['eco'],
+                        player_color=player_color,
+                        opponent=opponent,
+                        date=game.date,
+                        platform=game.platform,
+                        pgn=game.pgn
+                    )
+
+                    puzzles.append(puzzle)
+                    puzzles_this_game += 1
+
+                    logger.logger.debug(
+                        f"Found {puzzle_type} puzzle: {opening_info['name']} "
+                        f"move {puzzle.move_number}, eval loss: {eval_loss}cp, difficulty: {difficulty}"
+                    )
+
+                    # Stop if we've found enough puzzles overall
+                    if len(puzzles) >= max_puzzles:
+                        break
+
+            # Stop scanning games if we have enough puzzles
+            if len(puzzles) >= max_puzzles:
+                break
+
+        except Exception as e:
+            logger.logger.error(f"Error analyzing game {game.game_id}: {e}")
+            continue
+
+    logger.logger.info(
+        f"Puzzle generation complete: {len(puzzles)} puzzles found from {games_analyzed} games"
+    )
+
+    # Final shuffle to ensure maximum randomness
+    random.shuffle(puzzles)
+
+    return puzzles
+
+
+async def run_puzzle_generation_task(
+    task_id: str,
+    db_id: str,
+    username: str,
+    max_puzzles: int,
+    difficulty_filter: Optional[List[str]],
+    min_ply: int,
+    max_ply: int
+):
+    """Background task to generate puzzles with progress tracking."""
+    logger.logger.info(f"Starting puzzle generation task {task_id} for user {username} in database {db_id}")
+
+    try:
+        # Get database storage
+        storage = db_manager.get_database(db_id)
+
+        def progress_callback(progress_pct, current_game, total_games, puzzles_found):
+            """Update task progress."""
+            puzzle_tasks[task_id].update({
+                "progress": min(progress_pct, 99),
+                "current_game": current_game,
+                "total_games": total_games,
+                "puzzles_found": puzzles_found
+            })
+
+        # Generate puzzles
+        puzzles = generate_puzzles_from_games(
+            storage=storage,
+            username=username,
+            max_puzzles=max_puzzles,
+            difficulty_filter=difficulty_filter,
+            min_ply=min_ply,
+            max_ply=max_ply,
+            progress_callback=progress_callback
+        )
+
+        # Mark complete
+        puzzle_tasks[task_id].update({
+            "status": "completed",
+            "progress": 100,
+            "puzzles": puzzles
+        })
+
+        logger.logger.info(f"Puzzle generation task {task_id} completed: {len(puzzles)} puzzles found")
+
+    except Exception as e:
+        logger.logger.error(f"Puzzle generation task {task_id} failed: {e}")
+        puzzle_tasks[task_id].update({
+            "status": "failed",
+            "error": str(e)
+        })
 
 
 if __name__ == "__main__":

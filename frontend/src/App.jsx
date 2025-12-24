@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import axios from 'axios'
 import HistoryView from './HistoryView'
 import ExplorerView from './ExplorerView'
+import PuzzlesView from './PuzzlesView'
 import DatabaseSelector from './DatabaseSelector'
 import { useDatabase } from './DatabaseContext'
 
@@ -98,6 +99,12 @@ function App() {
         >
           Opening Explorer
         </button>
+        <button
+          style={activeTab === 'puzzles' ? styles.tabActive : styles.tab}
+          onClick={() => setActiveTab('puzzles')}
+        >
+          Puzzles
+        </button>
       </nav>
 
       <main style={styles.main}>
@@ -175,6 +182,7 @@ function App() {
 
         {activeTab === 'history' && <HistoryView />}
         {activeTab === 'explorer' && <ExplorerView />}
+        {activeTab === 'puzzles' && <PuzzlesView />}
       </main>
     </div>
   )
