@@ -285,6 +285,12 @@ function ExplorerView() {
             <div style={{opacity: loading ? 0.6 : 1, transition: 'opacity 0.3s'}}>
               <div style={styles.positionEval}>
                 <h3>Position Evaluation</h3>
+                {explorerData.opening_name && explorerData.opening_name !== 'Unknown Opening' && (
+                  <div style={styles.openingName}>
+                    <strong>{explorerData.opening_name}</strong>
+                    {explorerData.opening_eco && <span style={styles.ecoCode}> ({explorerData.opening_eco})</span>}
+                  </div>
+                )}
                 <div style={styles.evalBox}>
                   <div style={styles.evalRow}>
                     <strong>Score:</strong> {explorerData.position_eval?.score || 'N/A'}
@@ -538,6 +544,20 @@ const styles = {
     padding: '20px',
     background: '#e3f2fd',
     borderRadius: '8px'
+  },
+  openingName: {
+    fontSize: '18px',
+    color: '#1976d2',
+    marginBottom: '15px',
+    padding: '10px',
+    background: 'white',
+    borderRadius: '4px',
+    textAlign: 'center'
+  },
+  ecoCode: {
+    fontSize: '14px',
+    color: '#666',
+    fontWeight: 'normal'
   },
   evalBox: {
     marginTop: '15px',

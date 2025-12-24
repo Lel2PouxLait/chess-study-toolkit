@@ -302,6 +302,12 @@ function HistoryView() {
 
             <div style={styles.infoSection}>
               <h3>Game Info</h3>
+              {gameDetails?.opening_name && gameDetails.opening_name !== 'Unknown Opening' && (
+                <div style={styles.openingDisplay}>
+                  <strong>{gameDetails.opening_name}</strong>
+                  {gameDetails.opening_eco && <span style={styles.ecoCode}> ({gameDetails.opening_eco})</span>}
+                </div>
+              )}
               <div style={styles.infoGrid}>
                 <div style={styles.infoRow}>
                   <strong>Platform:</strong> {gameDetails?.platform}
@@ -536,6 +542,20 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '20px'
+  },
+  openingDisplay: {
+    fontSize: '16px',
+    color: '#1976d2',
+    marginBottom: '10px',
+    padding: '12px',
+    background: '#e3f2fd',
+    borderRadius: '4px',
+    textAlign: 'center'
+  },
+  ecoCode: {
+    fontSize: '14px',
+    color: '#666',
+    fontWeight: 'normal'
   },
   infoGrid: {
     display: 'flex',

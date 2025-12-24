@@ -19,9 +19,51 @@ from fetchers import ChessComFetcher, LichessFetcher
 from stockfish_engine import stockfish
 import logger
 from pathlib import Path
+import json
 
 # FastAPI app
 app = FastAPI(title="Chess Training API", version="1.0.0")
+
+# Load openings database
+OPENINGS_DB = {}
+try:
+    openings_path = Path(__file__).parent / "openings.json"
+    with open(openings_path, 'r') as f:
+        OPENINGS_DB = json.load(f)
+    logger.logger.info(f"Loaded openings database with {len(OPENINGS_DB)} root openings")
+except Exception as e:
+    logger.logger.warning(f"Could not load openings database: {e}")
+
+
+def detect_opening(moves: List[str]) -> Dict[str, str]:
+    """
+    Detect opening name and ECO code from a list of moves.
+
+    Args:
+        moves: List of moves in UCI format (e.g., ['e2e4', 'e7e5', 'g1f3'])
+
+    Returns:
+        Dict with 'name' and 'eco' keys, or {'name': 'Unknown Opening', 'eco': ''}
+    """
+    if not moves or not OPENINGS_DB:
+        return {'name': 'Unknown Opening', 'eco': ''}
+
+    current = OPENINGS_DB
+    last_known = {'name': 'Unknown Opening', 'eco': ''}
+
+    for move in moves:
+        if move in current:
+            node = current[move]
+            # Update last known opening
+            if 'name' in node:
+                last_known = {'name': node['name'], 'eco': node.get('eco', '')}
+            # Move deeper in the tree
+            current = node.get('moves', {})
+        else:
+            # No more matches in the tree
+            break
+
+    return last_known
 
 # Global database manager (initialized on startup)
 db_manager: DatabaseManager = None
@@ -414,6 +456,10 @@ async def get_game(game_id: str, db_id: str):
         raise HTTPException(status_code=404, detail="Game not found")
 
     logger.debug(f"Retrieved game {game_id} with {len(game.moves)} moves")
+
+    # Detect opening from the game moves
+    opening_info = detect_opening(game.moves)
+
     return {
         "game_id": game.game_id,
         "platform": game.platform,
@@ -424,7 +470,9 @@ async def get_game(game_id: str, db_id: str):
         "time_control": game.time_control,
         "rated": game.rated,
         "pgn": game.pgn,
-        "moves": game.moves
+        "moves": game.moves,
+        "opening_name": opening_info['name'],
+        "opening_eco": opening_info['eco']
     }
 
 
@@ -501,8 +549,15 @@ async def explorer_query(request: ExplorerQueryRequest, db_id: str):
             except:
                 pass
 
+        # Detect opening from the move history
+        move_history = [move.uci() for move in board.move_stack]
+
+        opening_info = detect_opening(move_history)
+
         return {
             "fen": request.fen,
+            "opening_name": opening_info['name'],
+            "opening_eco": opening_info['eco'],
             "position_eval": position_eval,
             "best_move_stockfish": best_move_san,
             "best_move_uci": best_move_uci,

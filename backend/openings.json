@@ -1,0 +1,180 @@
+{
+  "e2e4": {
+    "name": "King's Pawn",
+    "eco": "B00",
+    "moves": {
+      "e7e5": {
+        "name": "King's Pawn Game",
+        "eco": "C20",
+        "moves": {
+          "g1f3": {
+            "name": "King's Knight Opening",
+            "eco": "C40",
+            "moves": {
+              "b8c6": {
+                "name": "King's Knight Opening",
+                "eco": "C40"
+              }
+            }
+          },
+          "f1c4": {
+            "name": "Bishop's Opening",
+            "eco": "C23"
+          }
+        }
+      },
+      "c7c5": {
+        "name": "Sicilian Defense",
+        "eco": "B20",
+        "moves": {
+          "g1f3": {
+            "name": "Sicilian Defense",
+            "eco": "B20",
+            "moves": {
+              "d7d6": {
+                "name": "Sicilian Defense, Najdorf Variation",
+                "eco": "B90"
+              },
+              "b8c6": {
+                "name": "Sicilian Defense",
+                "eco": "B30"
+              },
+              "e7e6": {
+                "name": "Sicilian Defense, French Variation",
+                "eco": "B40"
+              }
+            }
+          },
+          "c2c3": {
+            "name": "Sicilian Defense, Alapin Variation",
+            "eco": "B22"
+          }
+        }
+      },
+      "e7e6": {
+        "name": "French Defense",
+        "eco": "C00",
+        "moves": {
+          "d2d4": {
+            "name": "French Defense",
+            "eco": "C00",
+            "moves": {
+              "d7d5": {
+                "name": "French Defense",
+                "eco": "C10"
+              }
+            }
+          }
+        }
+      },
+      "c7c6": {
+        "name": "Caro-Kann Defense",
+        "eco": "B10",
+        "moves": {
+          "d2d4": {
+            "name": "Caro-Kann Defense",
+            "eco": "B12"
+          }
+        }
+      },
+      "d7d6": {
+        "name": "Pirc Defense",
+        "eco": "B07"
+      },
+      "g8f6": {
+        "name": "Alekhine Defense",
+        "eco": "B02"
+      }
+    }
+  },
+  "d2d4": {
+    "name": "Queen's Pawn",
+    "eco": "A40",
+    "moves": {
+      "d7d5": {
+        "name": "Closed Game",
+        "eco": "D00",
+        "moves": {
+          "c2c4": {
+            "name": "Queen's Gambit",
+            "eco": "D06",
+            "moves": {
+              "d5c4": {
+                "name": "Queen's Gambit Accepted",
+                "eco": "D20"
+              },
+              "e7e6": {
+                "name": "Queen's Gambit Declined",
+                "eco": "D30"
+              },
+              "c7c6": {
+                "name": "Queen's Gambit, Slav Defense",
+                "eco": "D10"
+              }
+            }
+          },
+          "g1f3": {
+            "name": "Queen's Pawn Game",
+            "eco": "D02"
+          }
+        }
+      },
+      "g8f6": {
+        "name": "Indian Defense",
+        "eco": "A45",
+        "moves": {
+          "c2c4": {
+            "name": "Indian Game",
+            "eco": "A46",
+            "moves": {
+              "e7e6": {
+                "name": "Indian Game, Queen's Indian",
+                "eco": "E12"
+              },
+              "g7g6": {
+                "name": "King's Indian Defense",
+                "eco": "E60"
+              }
+            }
+          },
+          "g1f3": {
+            "name": "Indian Defense",
+            "eco": "A45"
+          }
+        }
+      },
+      "f7f5": {
+        "name": "Dutch Defense",
+        "eco": "A80"
+      }
+    }
+  },
+  "g1f3": {
+    "name": "Zukertort Opening",
+    "eco": "A04",
+    "moves": {
+      "d7d5": {
+        "name": "Zukertort Opening",
+        "eco": "A06"
+      },
+      "g8f6": {
+        "name": "Zukertort Opening",
+        "eco": "A04"
+      }
+    }
+  },
+  "c2c4": {
+    "name": "English Opening",
+    "eco": "A10",
+    "moves": {
+      "e7e5": {
+        "name": "English Opening, Reversed Sicilian",
+        "eco": "A20"
+      },
+      "g8f6": {
+        "name": "English Opening",
+        "eco": "A15"
+      }
+    }
+  }
+}
