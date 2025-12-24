@@ -14,13 +14,17 @@ import chess
 import chess.pgn
 import io
 
-from storage import storage, Game
+from storage import DatabaseManager, DatabaseMetadata, Game
 from fetchers import ChessComFetcher, LichessFetcher
 from stockfish_engine import stockfish
 import logger
+from pathlib import Path
 
 # FastAPI app
 app = FastAPI(title="Chess Training API", version="1.0.0")
+
+# Global database manager (initialized on startup)
+db_manager: DatabaseManager = None
 
 # CORS middleware (allow frontend to access API)
 app.add_middleware(
@@ -30,6 +34,32 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def startup_migration():
+    """
+    Migrate from old single-file system to multi-database system.
+    Archives old games.json if it exists.
+    """
+    global db_manager
+
+    data_dir = Path(__file__).parent / "data"
+    old_games_file = data_dir / "games.json"
+
+    if old_games_file.exists():
+        logger.info("Found old games.json - running migration")
+        backup_file = data_dir / "games_backup.json"
+
+        # Rename to backup
+        old_games_file.rename(backup_file)
+        logger.info(f"Backed up games.json to {backup_file}")
+        logger.info("Migration complete. Users can create new databases via the UI.")
+
+    # Initialize database manager
+    db_manager = DatabaseManager()
+    logger.info(f"Database manager initialized with {len(db_manager.metadata)} databases")
+
 
 # Background task tracking
 import_tasks: Dict[str, Dict] = {}
@@ -70,33 +100,111 @@ class ExplorerQueryRequest(BaseModel):
     usernames: Optional[List[str]] = None  # List of usernames to identify which color user played
 
 
+class CreateDatabaseRequest(BaseModel):
+    name: str
+
+
+class RenameDatabaseRequest(BaseModel):
+    name: str
+
+
 @app.get("/")
 async def root():
     """Health check endpoint."""
     logger.debug("Health check endpoint accessed")
-    total_games = len(storage.get_all_games())
-    logger.info(f"Health check: {total_games} games in database")
+    total_databases = len(db_manager.metadata) if db_manager else 0
+    logger.info(f"Health check: {total_databases} databases available")
     return {
         "status": "ok",
         "message": "Chess Training API is running",
-        "total_games": total_games
+        "total_databases": total_databases
     }
 
 
+# ===========================
+# Database Management Endpoints
+# ===========================
+
+@app.get("/api/databases")
+async def list_databases():
+    """Get list of all databases."""
+    logger.debug("Listing all databases")
+    databases = db_manager.list_databases()
+    logger.info(f"Returning {len(databases)} databases")
+    return databases
+
+
+@app.post("/api/databases")
+async def create_database(request: CreateDatabaseRequest):
+    """Create a new database."""
+    logger.info(f"Creating new database: {request.name}")
+    try:
+        metadata = db_manager.create_database(request.name)
+        logger.info(f"Database created successfully: {metadata.id}")
+        return metadata
+    except Exception as e:
+        logger.error(f"Error creating database: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/databases/{db_id}")
+async def delete_database(db_id: str):
+    """Delete a database."""
+    logger.info(f"Deleting database: {db_id}")
+    try:
+        db_manager.delete_database(db_id)
+        logger.info(f"Database deleted successfully: {db_id}")
+        return {"success": True, "message": f"Database {db_id} deleted"}
+    except ValueError as e:
+        logger.warning(f"Database not found: {db_id}")
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error deleting database: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/databases/{db_id}")
+async def rename_database(db_id: str, request: RenameDatabaseRequest):
+    """Rename a database."""
+    logger.info(f"Renaming database {db_id} to: {request.name}")
+    try:
+        metadata = db_manager.rename_database(db_id, request.name)
+        logger.info(f"Database renamed successfully: {db_id}")
+        return metadata
+    except ValueError as e:
+        logger.warning(f"Database not found: {db_id}")
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error renaming database: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ===========================
+# Game Import Endpoints
+# ===========================
+
 @app.post("/api/import", response_model=ImportResponse)
-async def import_games(request: ImportRequest, background_tasks: BackgroundTasks):
+async def import_games(request: ImportRequest, background_tasks: BackgroundTasks, db_id: str):
     """
     Start background task to import games from chess.com and/or lichess.
     Returns a task_id for tracking progress.
+
+    Args:
+        db_id: Database ID to import games into
     """
-    logger.info(f"Import request received - chess.com: {request.chesscom_username}, lichess: {request.lichess_username}")
+    logger.info(f"Import request received for database {db_id} - chess.com: {request.chesscom_username}, lichess: {request.lichess_username}")
+
+    # Validate database exists
+    if db_id not in db_manager.metadata:
+        logger.warning(f"Import request rejected: database {db_id} not found")
+        raise HTTPException(status_code=400, detail=f"Database {db_id} not found")
 
     if not request.chesscom_username and not request.lichess_username:
         logger.warning("Import request rejected: no username provided")
         raise HTTPException(status_code=400, detail="At least one username required")
 
     task_id = str(uuid.uuid4())
-    logger.info(f"Created import task {task_id}")
+    logger.info(f"Created import task {task_id} for database {db_id}")
 
     # Initialize task status
     import_tasks[task_id] = {
@@ -112,6 +220,7 @@ async def import_games(request: ImportRequest, background_tasks: BackgroundTasks
     background_tasks.add_task(
         run_import_task,
         task_id,
+        db_id,
         request.chesscom_username,
         request.lichess_username
     )
@@ -143,12 +252,16 @@ async def get_import_status(task_id: str):
 
 async def run_import_task(
     task_id: str,
+    db_id: str,
     chesscom_username: Optional[str],
     lichess_username: Optional[str]
 ):
     """Background task to fetch and import games."""
-    logger.info(f"Starting import task {task_id}")
+    logger.info(f"Starting import task {task_id} for database {db_id}")
     try:
+        # Get database storage
+        storage = db_manager.get_database(db_id)
+
         total_fetched = 0
         new_games_added = 0
         duplicates_skipped = 0
@@ -205,6 +318,10 @@ async def run_import_task(
         storage.save()
         logger.info(f"Task {task_id}: Saved games to storage")
 
+        # Update game count in metadata
+        db_manager.update_game_count(db_id)
+        logger.debug(f"Task {task_id}: Updated game count for database {db_id}")
+
         # Mark complete
         import_tasks[task_id].update({
             "status": "completed",
@@ -227,6 +344,7 @@ async def run_import_task(
 
 @app.get("/api/games")
 async def get_games(
+    db_id: str,
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
     color: Optional[str] = None,
@@ -235,8 +353,18 @@ async def get_games(
     """
     Get games with optional filters.
     Default: last 90 days.
+
+    Args:
+        db_id: Database ID to query
     """
-    logger.debug(f"Get games request - from: {from_date}, to: {to_date}, color: {color}, username: {username}")
+    logger.debug(f"Get games request for database {db_id} - from: {from_date}, to: {to_date}, color: {color}, username: {username}")
+
+    # Validate database exists
+    if db_id not in db_manager.metadata:
+        raise HTTPException(status_code=400, detail=f"Database {db_id} not found")
+
+    # Get database storage
+    storage = db_manager.get_database(db_id)
 
     # Default date range: last 90 days
     if not from_date:
@@ -245,7 +373,7 @@ async def get_games(
         to_date = datetime.now().isoformat()
 
     games = storage.filter_games(from_date, to_date, color, username)
-    logger.info(f"Retrieved {len(games)} games matching filters")
+    logger.info(f"Retrieved {len(games)} games from database {db_id} matching filters")
 
     # Return simplified game summaries
     return [
@@ -264,12 +392,25 @@ async def get_games(
 
 
 @app.get("/api/games/{game_id}")
-async def get_game(game_id: str):
-    """Get full game details including PGN and moves."""
-    logger.debug(f"Get game request for game_id: {game_id}")
+async def get_game(game_id: str, db_id: str):
+    """
+    Get full game details including PGN and moves.
+
+    Args:
+        db_id: Database ID to query
+    """
+    logger.debug(f"Get game request for game_id: {game_id} in database {db_id}")
+
+    # Validate database exists
+    if db_id not in db_manager.metadata:
+        raise HTTPException(status_code=400, detail=f"Database {db_id} not found")
+
+    # Get database storage
+    storage = db_manager.get_database(db_id)
+
     game = storage.get_game(game_id)
     if not game:
-        logger.warning(f"Game not found: {game_id}")
+        logger.warning(f"Game not found: {game_id} in database {db_id}")
         raise HTTPException(status_code=404, detail="Game not found")
 
     logger.debug(f"Retrieved game {game_id} with {len(game.moves)} moves")
@@ -308,21 +449,32 @@ async def analyze_position(request: AnalyzePositionRequest):
 
 
 @app.post("/api/explorer/query")
-async def explorer_query(request: ExplorerQueryRequest):
+async def explorer_query(request: ExplorerQueryRequest, db_id: str):
     """
     Query the opening explorer.
     Returns all continuations from the database for a given position,
     plus Stockfish analysis.
+
+    Args:
+        db_id: Database ID to query
     """
-    logger.info(f"Explorer query - Color: {request.color}, Usernames: {request.usernames}, Time control: {request.time_control}")
+    logger.info(f"Explorer query for database {db_id} - Color: {request.color}, Usernames: {request.usernames}, Time control: {request.time_control}")
     logger.debug(f"Explorer query FEN: {request.fen}")
 
     try:
+        # Validate database exists
+        if db_id not in db_manager.metadata:
+            raise HTTPException(status_code=400, detail=f"Database {db_id} not found")
+
+        # Get database storage
+        storage = db_manager.get_database(db_id)
+
         # Parse the position
         board = chess.Board(request.fen)
 
         # Find all games that reached this position
         continuations = find_continuations(
+            storage,
             board,
             request.color,
             request.from_date,
@@ -330,7 +482,7 @@ async def explorer_query(request: ExplorerQueryRequest):
             request.time_control,
             request.usernames
         )
-        logger.debug(f"Found {len(continuations)} continuations")
+        logger.debug(f"Found {len(continuations)} continuations in database {db_id}")
 
         # Get Stockfish evaluation for current position
         if not stockfish.engine:
@@ -408,6 +560,7 @@ def classify_time_control(time_control_str: str) -> str:
 
 
 def find_continuations(
+    storage,
     board: chess.Board,
     color: str,
     from_date: Optional[str] = None,
@@ -419,6 +572,9 @@ def find_continuations(
     Find all continuations from database games.
     Returns list of moves with W/D/L statistics.
     Only includes games where the user played the specified color.
+
+    Args:
+        storage: GameStorage instance for the database
     """
     continuations = {}
 

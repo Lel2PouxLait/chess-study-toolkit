@@ -2,10 +2,13 @@ import React, { useState } from 'react'
 import axios from 'axios'
 import HistoryView from './HistoryView'
 import ExplorerView from './ExplorerView'
+import DatabaseSelector from './DatabaseSelector'
+import { useDatabase } from './DatabaseContext'
 
 const API_BASE = '/api'
 
 function App() {
+  const { currentDbId } = useDatabase()
   const [activeTab, setActiveTab] = useState('import')
   const [chesscomUsername, setChesscomUsername] = useState('')
   const [lichessUsername, setLichessUsername] = useState('')
@@ -14,6 +17,11 @@ function App() {
   const [importError, setImportError] = useState(null)
 
   const startImport = async () => {
+    if (!currentDbId) {
+      alert('Please select or create a database first')
+      return
+    }
+
     if (!chesscomUsername && !lichessUsername) {
       alert('Please enter at least one username')
       return
@@ -25,7 +33,7 @@ function App() {
 
     try {
       // Start import
-      const response = await axios.post(`${API_BASE}/import`, {
+      const response = await axios.post(`${API_BASE}/import?db_id=${currentDbId}`, {
         chesscom_username: chesscomUsername || null,
         lichess_username: lichessUsername || null
       })
@@ -97,8 +105,10 @@ function App() {
           <div style={styles.section}>
             <h2>Import Games</h2>
             <p style={styles.sectionDesc}>
-              Import games from chess.com and lichess.org into the tool database
+              Import games from chess.com and lichess.org into the selected database
             </p>
+
+            <DatabaseSelector />
 
             <div style={styles.form}>
               <div style={styles.formGroup}>

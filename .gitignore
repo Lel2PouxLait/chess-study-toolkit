@@ -52,7 +52,7 @@ build/
 .cache/
 
 # Data files - each user builds their own database
-backend/data/games.json
+backend/data/
 
 # Environment variables
 .env

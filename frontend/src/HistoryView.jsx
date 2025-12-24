@@ -3,10 +3,12 @@ import axios from 'axios'
 import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import EvaluationBar from './EvaluationBar'
+import { useDatabase } from './DatabaseContext'
 
 const API_BASE = '/api'
 
 function HistoryView() {
+  const { currentDbId } = useDatabase()
   const [games, setGames] = useState([])
   const [loading, setLoading] = useState(false)
   const [fromDate, setFromDate] = useState('')
@@ -28,12 +30,14 @@ function HistoryView() {
     setFromDate(ninetyDaysAgo.toISOString().split('T')[0])
   }, [])
 
-  // Load games when date range changes
+  // Load games when date range or database changes
   useEffect(() => {
-    if (fromDate && toDate) {
+    if (fromDate && toDate && currentDbId) {
       loadGames()
+    } else if (!currentDbId) {
+      setGames([])
     }
-  }, [fromDate, toDate])
+  }, [fromDate, toDate, currentDbId])
 
   // Auto-analyze position when it changes
   useEffect(() => {
@@ -43,6 +47,11 @@ function HistoryView() {
   }, [boardPosition])
 
   const loadGames = async () => {
+    if (!currentDbId) {
+      setGames([])
+      return
+    }
+
     setLoading(true)
     try {
       // Set to_date to end of day to include all games from that day
@@ -51,6 +60,7 @@ function HistoryView() {
 
       const response = await axios.get(`${API_BASE}/games`, {
         params: {
+          db_id: currentDbId,
           from_date: new Date(fromDate).toISOString(),
           to_date: toDateTime.toISOString()
         }
@@ -64,7 +74,9 @@ function HistoryView() {
 
   const selectGame = async (gameId) => {
     try {
-      const response = await axios.get(`${API_BASE}/games/${gameId}`)
+      const response = await axios.get(`${API_BASE}/games/${gameId}`, {
+        params: { db_id: currentDbId }
+      })
       const details = response.data
       console.log('Game details loaded:', details)
       console.log('Moves array:', details.moves)
@@ -170,6 +182,20 @@ function HistoryView() {
       console.error('Error analyzing position:', error)
     }
     setAnalyzing(false)
+  }
+
+  // Show empty state if no database is selected
+  if (!currentDbId) {
+    return (
+      <div style={styles.container}>
+        <h2>Database game list</h2>
+        <div style={styles.emptyState}>
+          <p style={styles.emptyText}>
+            Please select or create a database from the Import tab to view your games.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -537,6 +563,17 @@ const styles = {
     padding: '8px',
     background: 'white',
     borderRadius: '4px'
+  },
+  emptyState: {
+    padding: '60px 20px',
+    textAlign: 'center',
+    background: '#f9f9f9',
+    borderRadius: '8px',
+    marginTop: '30px'
+  },
+  emptyText: {
+    fontSize: '16px',
+    color: '#666'
   }
 }
 

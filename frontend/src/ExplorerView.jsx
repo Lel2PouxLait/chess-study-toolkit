@@ -3,10 +3,12 @@ import axios from 'axios'
 import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import EvaluationBar from './EvaluationBar'
+import { useDatabase } from './DatabaseContext'
 
 const API_BASE = '/api'
 
 function ExplorerView() {
+  const { currentDbId } = useDatabase()
   const [game, setGame] = useState(new Chess())
   const [position, setPosition] = useState('start')
   const [color, setColor] = useState('white')
@@ -43,13 +45,20 @@ function ExplorerView() {
   }, [])
 
   useEffect(() => {
-    // Query explorer when position, color, dates, time control, or usernames change
-    if (fromDate && toDate) {
+    // Query explorer when position, color, dates, time control, usernames, or database change
+    if (fromDate && toDate && currentDbId) {
       queryExplorer()
+    } else if (!currentDbId) {
+      setExplorerData(null)
     }
-  }, [position, color, fromDate, toDate, timeControl, chesscomUsername, lichessUsername])
+  }, [position, color, fromDate, toDate, timeControl, chesscomUsername, lichessUsername, currentDbId])
 
   const queryExplorer = async () => {
+    if (!currentDbId) {
+      setExplorerData(null)
+      return
+    }
+
     setLoading(true)
     try {
       // Set to_date to end of day to include all games from that day
@@ -61,7 +70,7 @@ function ExplorerView() {
       if (chesscomUsername.trim()) usernames.push(chesscomUsername.trim())
       if (lichessUsername.trim()) usernames.push(lichessUsername.trim())
 
-      const response = await axios.post(`${API_BASE}/explorer/query`, {
+      const response = await axios.post(`${API_BASE}/explorer/query?db_id=${currentDbId}`, {
         fen: game.fen(),
         color: color,
         from_date: new Date(fromDate).toISOString(),
@@ -117,6 +126,20 @@ function ExplorerView() {
     game.undo()
     setPosition(game.fen())
     setMoveHistory(moveHistory.slice(0, -1))
+  }
+
+  // Show empty state if no database is selected
+  if (!currentDbId) {
+    return (
+      <div style={styles.container}>
+        <h2>Opening Explorer</h2>
+        <div style={styles.emptyState}>
+          <p style={styles.emptyText}>
+            Please select or create a database from the Import tab to use the opening explorer.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -584,6 +607,17 @@ const styles = {
   statEval: {
     color: '#2196F3',
     marginLeft: 'auto'
+  },
+  emptyState: {
+    padding: '60px 20px',
+    textAlign: 'center',
+    background: '#f9f9f9',
+    borderRadius: '8px',
+    marginTop: '30px'
+  },
+  emptyText: {
+    fontSize: '16px',
+    color: '#666'
   }
 }
 
