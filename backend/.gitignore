@@ -1,0 +1,9 @@
+
+# Build scripts
+build_openings_tree.js
+download_lichess_openings.js
+
+# Node modules
+node_modules/
+package.json
+package-lock.json
