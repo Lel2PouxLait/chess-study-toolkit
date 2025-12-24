@@ -20,6 +20,8 @@ function ExplorerView() {
   const [selectedTimeControls, setSelectedTimeControls] = useState([])
   const [chesscomUsername, setChesscomUsername] = useState('')
   const [lichessUsername, setLichessUsername] = useState('')
+  const [fenInput, setFenInput] = useState('')
+  const [fenError, setFenError] = useState('')
 
   // Add CSS keyframes for spinner animation
   useEffect(() => {
@@ -128,6 +130,38 @@ function ExplorerView() {
     setMoveHistory(moveHistory.slice(0, -1))
   }
 
+  const loadPositionFromFen = () => {
+    try {
+      setFenError('')
+      const newGame = new Chess(fenInput.trim())
+      setGame(newGame)
+      setPosition(newGame.fen())
+
+      // Rebuild move history from the position
+      const moves = []
+      const tempGame = new Chess()
+      for (const move of newGame.history()) {
+        moves.push(move)
+        tempGame.move(move)
+      }
+      setMoveHistory(moves)
+      setFenInput('')
+    } catch (error) {
+      setFenError('Invalid FEN notation. Please check your input.')
+    }
+  }
+
+  const copyCurrentFen = () => {
+    navigator.clipboard.writeText(game.fen())
+      .then(() => {
+        // Show success feedback (could add a toast notification here)
+        alert('FEN copied to clipboard!')
+      })
+      .catch(() => {
+        setFenError('Failed to copy FEN to clipboard')
+      })
+  }
+
   // Show empty state if no database is selected
   if (!currentDbId) {
     return (
@@ -161,6 +195,27 @@ function ExplorerView() {
               <option value="white">White</option>
               <option value="black">Black</option>
             </select>
+          </div>
+
+          <div style={styles.fenSearch}>
+            <label style={styles.label}>Position Search (FEN):</label>
+            <div style={styles.fenInputContainer}>
+              <input
+                type="text"
+                value={fenInput}
+                onChange={(e) => setFenInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && loadPositionFromFen()}
+                placeholder="Paste FEN notation to jump to position..."
+                style={styles.fenInput}
+              />
+              <button onClick={loadPositionFromFen} style={styles.fenButton}>
+                Load Position
+              </button>
+              <button onClick={copyCurrentFen} style={styles.copyFenButton} title="Copy current FEN">
+                📋 Copy FEN
+              </button>
+            </div>
+            {fenError && <div style={styles.fenError}>{fenError}</div>}
           </div>
 
           <div style={styles.dateFilters}>
@@ -391,6 +446,53 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '10px'
+  },
+  fenSearch: {
+    padding: '15px',
+    background: '#f9f9f9',
+    borderRadius: '8px',
+    border: '1px solid #e0e0e0'
+  },
+  fenInputContainer: {
+    display: 'flex',
+    gap: '10px',
+    marginTop: '8px'
+  },
+  fenInput: {
+    flex: 1,
+    padding: '8px 12px',
+    borderRadius: '4px',
+    border: '1px solid #ddd',
+    fontSize: '13px',
+    fontFamily: 'monospace'
+  },
+  fenButton: {
+    padding: '8px 16px',
+    background: '#4CAF50',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: '500'
+  },
+  copyFenButton: {
+    padding: '8px 12px',
+    background: '#2196F3',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    whiteSpace: 'nowrap'
+  },
+  fenError: {
+    marginTop: '8px',
+    padding: '8px',
+    background: '#ffebee',
+    color: '#c62828',
+    borderRadius: '4px',
+    fontSize: '13px'
   },
   dateFilters: {
     display: 'flex',
